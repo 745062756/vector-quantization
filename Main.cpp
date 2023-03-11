@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <time.h> 
 #include <cmath>
+#include <algorithm>
 
 using namespace std;
 
@@ -17,6 +18,7 @@ MyImage			inImage, outImage;
 HINSTANCE		hInst;
 TCHAR szTitle[MAX_LOADSTRING];
 TCHAR szWindowClass[MAX_LOADSTRING];
+int side;
 
 // Foward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE hInstance);
@@ -26,118 +28,167 @@ LRESULT CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
 void 				ColorPixel(char* imgBuf, int w, int h, int x, int y);
 
 
-double dist_calc(pair<int, int> pt1, pair<int, int> pt2) {
-	return sqrt(pow(pt1.first-pt2.first,2)+pow(pt1.second - pt2.second,2));
+double dist_calc(vector<int>& vc1, vector<int>& vc2) {
+	double res = 0;
+	for (int k = 0; k < side * side; ++k) {
+		res += pow(vc1[k] - vc2[k], 2);
+	}
+	return sqrt(res);
 }
 
-void err_reduce(vector<tuple<int, int, int>> & inputV, vector<tuple<int, int, unordered_set<int>>>& book) {
+int mp=0;
+int op(int x) {
+	return round(x/(double)mp);
+}
+
+void err_reduce(vector<pair<vector<int>,int>> & inputV, vector<pair<vector<int>, unordered_set<int>>>& book) {
 	unordered_set<string> pool;
 	for (int i = 0; i < inputV.size();i++) {
 		pair<int, double> minCodeV = { -1, 1000000 };
 		for (int j = 0; j < book.size(); j++) {
-			double dist = dist_calc({ get<0>(inputV[i]), get<1>(inputV[i]) }, { get<0>(book[j]) , get<1>(book[j]) });
+			double dist = dist_calc(inputV[i].first, book[j].first);
 			if (dist < minCodeV.second) {
 				minCodeV = {j, dist };
 			}
 		}
-		get<2>(inputV[i])=minCodeV.first;
-		get<2>(book[minCodeV.first]).insert(i);
-		pool.insert(to_string(get<0>(book[minCodeV.first]))+"-"+to_string(get<1>(book[minCodeV.first])));
+		inputV[i].second=minCodeV.first;
+		book[minCodeV.first].second.insert(i);
+
+		string selectedVStr;
+		for (int e = 0; e < side * side; ++e) {
+			selectedVStr += to_string(book[minCodeV.first].first[e]) + "-";
+		}
+		pool.insert(selectedVStr);
 	}
 
 	// chk empty code
 	for (int k = 0; k < book.size();++k) {
-		if (get<2>(book[k]).size() == 0) {
+		if (book[k].second.size() == 0) {
 			cout << "find empty code" << endl;
 
-			bool finish = false;
-			while (!finish) {
-				int randomVectorId = rand() % inputV.size(); // 0~sz-1
-				string selectedVStr = to_string(get<0>(inputV[randomVectorId])) + "-" + to_string(get<1>(inputV[randomVectorId]));
-				if (pool.count(selectedVStr) == 1||get<2>(book[get<2>(inputV[randomVectorId])]).size()<2) continue;
-				get<0>(book[k])= get<0>(inputV[randomVectorId]);
-				get<1>(book[k])= get<1>(inputV[randomVectorId]);
-				get<2>(book[k]).insert(randomVectorId);
+			//bool finish = false;
+			//while (!finish) {
+			//	int randomVectorId = rand() % inputV.size(); // 0~sz-1
+			//	string selectedVStr = to_string(get<0>(inputV[randomVectorId])) + "-" + to_string(get<1>(inputV[randomVectorId]));
+			//	if (pool.count(selectedVStr) == 1||get<2>(book[get<2>(inputV[randomVectorId])]).size()<2) continue;
+			//	get<0>(book[k])= get<0>(inputV[randomVectorId]);
+			//	get<1>(book[k])= get<1>(inputV[randomVectorId]);
+			//	get<2>(book[k]).insert(randomVectorId);
 
-				get<2>(book[get<2>(inputV[randomVectorId])]).erase(randomVectorId);
-				get<2>(inputV[randomVectorId]) = k;
+			//	get<2>(book[get<2>(inputV[randomVectorId])]).erase(randomVectorId);
+			//	get<2>(inputV[randomVectorId]) = k;
 
-				pool.insert(selectedVStr);
-				finish = true;
-			}
+			//	pool.insert(selectedVStr);
+			//	finish = true;
+			//}
 		}
 	}
-
 	// adjust code
 	for (auto & each: book) {
-		int m = 0;
-		int sumX = 0;
-		int sumY = 0;
-		for (int id : get<2>(each)) {
-			sumX+=get<0>(inputV[id]);
-			sumY+=get<1>(inputV[id]);
-			m++;
+		vector<int> temS(side*side, 0);
+
+		mp = 0;
+		for (int id : each.second) {
+			for (int p = 0; p < side * side;++p) {
+				temS[p] += inputV[id].first[p];
+			}
+			mp++;
 		}
-		get<0>(each) = round(sumX / (double)m);
-		get<1>(each) = round(sumY / (double)m);
-		get<2>(each).clear();
+		transform(temS.begin(), temS.end(), temS.begin(), op);
+		each.first = temS;
+		each.second.clear();
 	}
 }
 
 
 char* compression(int codeNum) {
-	vector<tuple<int, int, unordered_set<int>>> codeBook;
-	vector<tuple<int, int, int>> inputVectors;
-	vector<pair<int, int>> prev;
+	vector<pair<vector<int>, unordered_set<int>>> codeBook;
+	vector<pair<vector<int>,int>> inputVectors;
+	vector<vector<int>> prev;
 
-	for (int i = 0; i < inImage.getHeight() * inImage.getWidth()*3; i=i+6)
+	for (int i = 0; i * inImage.getWidth() * 3 * side < inImage.getWidth() * inImage.getHeight() * 3; ++i)
 	{
-		inputVectors.push_back({(int)(unsigned char)inImage.getImageData()[i], (int)(unsigned char)inImage.getImageData()[i + 3], -1});
+		for (int j = 0; side * 3 * j < 3 * inImage.getWidth(); j++)
+		{
+			int final = i * inImage.getWidth() * 3 * side + side * 3 * j;
+			vector<int> newV;
+			for (int a = 0; a < side; ++a)
+			{
+				for (int b = 0; b < side; ++b)
+				{
+					int idx = final + a * 3 * inImage.getWidth() + 3 * b;
+					newV.push_back((int)(unsigned char)inImage.getImageData()[idx]);
+				}
+			}
+			inputVectors.push_back({ newV,-1});
+		}
 	}
+
 	// initial code vector
 	unordered_set<string> selectedVec;
 	for (int i = 0; i < codeNum; i++) {
 		bool finish = false;
 		while (!finish) {
 			int randomVectorId = rand() % inputVectors.size(); // 0~sz-1
-			string selectedVStr = to_string(get<0>(inputVectors[randomVectorId]))+"-"+to_string(get<1>(inputVectors[randomVectorId]));
+			string selectedVStr;
+			for (int e = 0; e < side * side; ++e) {
+				selectedVStr += to_string(inputVectors[randomVectorId].first[e]) + "-";
+			}
 			if (selectedVec.count(selectedVStr) == 1) continue;
-			codeBook.push_back({get<0>(inputVectors[randomVectorId]), get<1>(inputVectors[randomVectorId]), unordered_set<int>()});
-			prev.push_back({get<0>(inputVectors[randomVectorId]), get<1>(inputVectors[randomVectorId])});
+			codeBook.push_back({inputVectors[randomVectorId].first, unordered_set<int>()});
+			prev.push_back(inputVectors[randomVectorId].first);
 			selectedVec.insert(selectedVStr);
 			finish = true;
 		}
 	}
 
 	int rnd = 0;
-	int diffA = 10;
-	int diffB = 10;
-	while (!(rnd > 100 || (diffA ==0 && diffB ==0))) {
+	vector<int> totalDiff(side*side, 10);
+	while (!(rnd > 100 || (all_of(totalDiff.begin(), totalDiff.end(), [](int i) {return i == 0;})))) {
 		err_reduce(inputVectors, codeBook);
 		cout << "round (max 100, please wait): " << rnd << endl;
-		diffA = 0;
-		diffB = 0;
+		transform(totalDiff.begin(), totalDiff.end(), totalDiff.begin(), [](int z) {return 0;});
+
 		for (int q = 0; q < codeBook.size();++q) {
-			int diffX = abs(get<0>(codeBook[q]) - prev[q].first);
-			int diffY = abs(get<1>(codeBook[q]) - prev[q].second);
-			cout << diffX << "," << diffY << endl;
-			prev[q] = { get<0>(codeBook[q]) ,get<1>(codeBook[q]) };
-			diffA += diffX;
-			diffB += diffY;
+			vector<int> temV(side * side, 0);
+			for (int t = 0; t < side * side; ++t) {
+				temV[t] = abs(codeBook[q].first[t] - prev[q][t]);
+			}
+
+			for_each(temV.begin(), temV.end(), [](int f) {cout << f << ", "; });
+			cout << endl;
+
+			prev[q] = codeBook[q].first;
+			transform(totalDiff.begin(), totalDiff.end(), temV.begin(), totalDiff.begin(), [](int x, int c) {return x + c; });
 		}
 		rnd++;
 	}
 
 	char* outData = new char[inImage.getHeight() * inImage.getWidth() * 3];
 
-	for (int i = 0; i < inImage.getHeight() * inImage.getWidth() * 3; i = i + 6) {
-		int newIdx = i / 6;
-		outData[i] = get<0>(codeBook[get<2>(inputVectors[newIdx])]);
-		outData[i + 1] = outData[i];
-		outData[i + 2] = outData[i];
-		outData[i+3] = get<1>(codeBook[get<2>(inputVectors[newIdx])]);
-		outData[i + 4] = outData[i + 3];
-		outData[i + 5] = outData[i + 3];
+
+	int cnt = 0;
+	for (int i = 0; i * inImage.getWidth() * 3 * side < inImage.getWidth() * inImage.getHeight() * 3; ++i)
+	{
+		for (int j = 0; side * 3 * j < 3 * inImage.getWidth(); j++)
+		{
+			int final = i * inImage.getWidth() * 3 * side + side * 3 * j;
+
+			vector<int> newV = codeBook[inputVectors[cnt].second].first;
+			int mq = 0;
+			for (int a = 0; a < side; ++a)
+			{
+				for (int b = 0; b < side; ++b)
+				{
+					int idx = final + a * 3 * inImage.getWidth() + 3 * b;
+					outData[idx] = newV[mq];
+					outData[idx+1] = newV[mq];
+					outData[idx+2] = newV[mq];
+					mq++;
+				}
+			}
+			cnt++;
+		}
 	}
 	return outData;
 }
@@ -160,7 +211,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 	AllocConsole();
 	freopen("CONOUT$", "w", stdout);
 	cout << "file: " << filePath << endl << "codebook size: " << codeNum << endl;
-
+	side = sqrt(size);
 	// Set up the input images
 	int w = 352;
 	int h = 288;
